@@ -1082,4 +1082,5 @@ class BasicDecoder(Decoder):
           state=cell_state,
           sample_ids=sample_ids)
     outputs = BasicDecoderOutput(cell_outputs, sample_ids)
+    print("Step: %s, State: %s" % (time, state))
     return (outputs, next_state, next_inputs, finished)
