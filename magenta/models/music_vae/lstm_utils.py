@@ -172,7 +172,7 @@ def get_sampling_probability(hparams, is_training):
 class LstmDecodeResults(
     collections.namedtuple('LstmDecodeResults',
                            ('rnn_input', 'rnn_output', 'samples', 'final_state',
-                            'final_sequence_lengths'))):
+                            'final_sequence_lengths', 'h_vectors'))):
   pass
 
 

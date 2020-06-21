@@ -786,7 +786,6 @@ class LSTMBlockCell(LayerRNNCell):
         use_peephole=self._use_peephole)
 
     new_state = rnn_cell.LSTMStateTuple(cs, h)
-    print("h: %s" % h)
     return h, new_state
 
 

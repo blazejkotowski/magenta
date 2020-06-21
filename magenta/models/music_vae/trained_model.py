@@ -19,6 +19,7 @@ import os
 import re
 import tarfile
 import tempfile
+import collections
 
 import numpy as np
 import tensorflow.compat.v1 as tf
@@ -308,6 +309,28 @@ class TrainedModel(object):
     else:
       return self._config.data_converter.from_tensors(tensors)
 
+  def decode_with_h_vectors(self, z, length=None, temperature=1.0, c_input=None):
+    full_results = self.decode_to_tensors(z, length, temperature, c_input, return_full_results=True)
+    tensors = []
+    h_vectors = []
+    for res in full_results:
+      tensors.extend(res.samples)
+      h_vectors.extend(res.h_vectors)
+    h_vectors = h_vectors[:len(z)]
+
+    if self._c_input is not None:
+      sequences = self._config.data_converter.from_tensors(
+          tensors,
+          np.tile(
+              np.expand_dims(c_input, 0),
+              [self._config.hparams.batch_size, 1, 1]))
+    else:
+      sequences = self._config.data_converter.from_tensors(tensors)
+
+    DecodeResults = collections.namedtuple('DecodeResults', ['sequence', 'h_vectors'])
+    return list(map(lambda x: DecodeResults(x[0], x[1]), zip(sequences, h_vectors)))
+
+
   def decode_to_tensors(self, z, length=None, temperature=1.0, c_input=None,
                         return_full_results=False):
     """Decodes a collection of latent vectors into output tensors.
@@ -351,7 +374,8 @@ class TrainedModel(object):
       if self._c_input is not None:
         feed_dict[self._c_input] = c_input
       if return_full_results:
-        outputs.extend(self._sess.run(self._decoder_results, feed_dict))
+        decoder_results = self._sess.run(self._decoder_results, feed_dict)
+        outputs.append(decoder_results)
       else:
         outputs.extend(self._sess.run(self._outputs, feed_dict))
     return outputs[:n]

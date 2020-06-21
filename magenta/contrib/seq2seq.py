@@ -404,10 +404,10 @@ def dynamic_decode(decoder,
                                                decoder.output_dtype)
 
     def condition(unused_time, unused_outputs_ta, unused_state, unused_inputs,
-                  finished, unused_sequence_lengths):
+                  finished, unused_sequence_lengths, unused_h_vectors):
       return tf.logical_not(tf.reduce_all(finished))
 
-    def body(time, outputs_ta, state, inputs, finished, sequence_lengths):
+    def body(time, outputs_ta, state, inputs, finished, sequence_lengths, h_vectors):
       """Internal while_loop body.
 
       Args:
@@ -425,6 +425,7 @@ def dynamic_decode(decoder,
       """
       (next_outputs, decoder_state, next_inputs,
        decoder_finished) = decoder.step(time, inputs, state)
+
       decoder_state_sequence_lengths = False
       if decoder.tracks_own_finished:
         next_finished = decoder_finished
@@ -478,9 +479,18 @@ def dynamic_decode(decoder,
 
       outputs_ta = tf.nest.map_structure(lambda ta, out: ta.write(time, out),
                                          outputs_ta, emit)
-      return (time + 1, outputs_ta, next_state, next_inputs, next_finished,
-              next_sequence_lengths)
 
+      # First decoding layer cell state. Dimensions: [batch_size x first_rnn_size]
+      def append_to_batch(current, to_append):
+        return current.write(time, to_append)
+      # Use RaggedTensor for keeping two h vectors of different size
+      current_h_vectors = decoder_state[0].h
+      next_h_vectors = tf.nest.map_structure(append_to_batch, h_vectors, current_h_vectors)
+
+      return (time + 1, outputs_ta, next_state, next_inputs, next_finished,
+              next_sequence_lengths, next_h_vectors)
+
+    initial_h_vectors_ta = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True, clear_after_read=False)
     res = tf.while_loop(
         condition,
         body,
@@ -491,6 +501,7 @@ def dynamic_decode(decoder,
             initial_inputs,
             initial_finished,
             initial_sequence_lengths,
+            initial_h_vectors_ta,
         ),
         parallel_iterations=parallel_iterations,
         maximum_iterations=maximum_iterations,
@@ -499,6 +510,11 @@ def dynamic_decode(decoder,
     final_outputs_ta = res[1]
     final_state = res[2]
     final_sequence_lengths = res[5]
+    final_h_vectors_ta = res[6]
+
+    final_h_vectors = tf.nest.map_structure(lambda ta: ta.stack(), final_h_vectors_ta)
+    # Get to [batch x step x rnn_dimensions]
+    final_h_vectors = tf.transpose(final_h_vectors, [1, 0, 2])
 
     final_outputs = tf.nest.map_structure(
         lambda ta: ta.stack(), final_outputs_ta)
@@ -513,7 +529,7 @@ def dynamic_decode(decoder,
       final_outputs = tf.nest.map_structure(
           _transpose_batch_time, final_outputs)
 
-  return final_outputs, final_state, final_sequence_lengths
+  return final_outputs, final_state, final_sequence_lengths, final_h_vectors
 
 
 # The following sample functions (_call_sampler, bernoulli_sample,
@@ -1082,5 +1098,5 @@ class BasicDecoder(Decoder):
           state=cell_state,
           sample_ids=sample_ids)
     outputs = BasicDecoderOutput(cell_outputs, sample_ids)
-    print("Step: %s, State: %s" % (time, state))
+
     return (outputs, next_state, next_inputs, finished)
