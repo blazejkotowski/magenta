@@ -404,10 +404,10 @@ def dynamic_decode(decoder,
                                                decoder.output_dtype)
 
     def condition(unused_time, unused_outputs_ta, unused_state, unused_inputs,
-                  finished, unused_sequence_lengths, unused_h_vectors):
+                  finished, unused_sequence_lengths, unused_h_vectors_1st, unused_h_vectors_2nd, unused_c_vectors_2nd):
       return tf.logical_not(tf.reduce_all(finished))
 
-    def body(time, outputs_ta, state, inputs, finished, sequence_lengths, h_vectors):
+    def body(time, outputs_ta, state, inputs, finished, sequence_lengths, h_vectors_1st, h_vectors_2nd, c_vectors_2nd):
       """Internal while_loop body.
 
       Args:
@@ -480,17 +480,27 @@ def dynamic_decode(decoder,
       outputs_ta = tf.nest.map_structure(lambda ta, out: ta.write(time, out),
                                          outputs_ta, emit)
 
+      # EXTRACT ALL H VECTORS HERE
       # First decoding layer cell state. Dimensions: [batch_size x first_rnn_size]
       def append_to_batch(current, to_append):
         return current.write(time, to_append)
       # Use RaggedTensor for keeping two h vectors of different size
-      current_h_vectors = decoder_state[0].h
-      next_h_vectors = tf.nest.map_structure(append_to_batch, h_vectors, current_h_vectors)
+
+      current_h_vectors_1st = decoder_state[0].h
+      current_h_vectors_2nd = decoder_state[1].h
+      current_c_vectors_2nd = decoder_state[1].c
+
+      next_h_vectors_1st = tf.nest.map_structure(append_to_batch, h_vectors_1st, current_h_vectors_1st)
+      next_h_vectors_2nd = tf.nest.map_structure(append_to_batch, h_vectors_2nd, current_h_vectors_2nd)
+      next_c_vectors_2nd = tf.nest.map_structure(append_to_batch, c_vectors_2nd, current_c_vectors_2nd)
 
       return (time + 1, outputs_ta, next_state, next_inputs, next_finished,
-              next_sequence_lengths, next_h_vectors)
+              next_sequence_lengths, next_h_vectors_1st, next_h_vectors_2nd, next_c_vectors_2nd)
 
-    initial_h_vectors_ta = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True, clear_after_read=False)
+    initial_h_vectors_1st_ta = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True, clear_after_read=False)
+    initial_h_vectors_2nd_ta = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True, clear_after_read=False)
+    initial_c_vectors_2nd_ta = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True, clear_after_read=False)
+
     res = tf.while_loop(
         condition,
         body,
@@ -501,7 +511,9 @@ def dynamic_decode(decoder,
             initial_inputs,
             initial_finished,
             initial_sequence_lengths,
-            initial_h_vectors_ta,
+            initial_h_vectors_1st_ta,
+            initial_h_vectors_2nd_ta,
+            initial_c_vectors_2nd_ta
         ),
         parallel_iterations=parallel_iterations,
         maximum_iterations=maximum_iterations,
@@ -510,11 +522,17 @@ def dynamic_decode(decoder,
     final_outputs_ta = res[1]
     final_state = res[2]
     final_sequence_lengths = res[5]
-    final_h_vectors_ta = res[6]
+    final_h_vectors_1st_ta = res[6]
+    final_h_vectors_2nd_ta = res[7]
+    final_c_vectors_2nd_ta = res[8]
 
-    final_h_vectors = tf.nest.map_structure(lambda ta: ta.stack(), final_h_vectors_ta)
+    final_h_vectors_1st = tf.nest.map_structure(lambda ta: ta.stack(), final_h_vectors_1st_ta)
+    final_h_vectors_2nd = tf.nest.map_structure(lambda ta: ta.stack(), final_h_vectors_2nd_ta)
+    final_c_vectors_2nd = tf.nest.map_structure(lambda ta: ta.stack(), final_c_vectors_2nd_ta)
     # Get to [batch x step x rnn_dimensions]
-    final_h_vectors = tf.transpose(final_h_vectors, [1, 0, 2])
+    final_h_vectors_1st = tf.transpose(final_h_vectors_1st, [1, 0, 2])
+    final_h_vectors_2nd = tf.transpose(final_h_vectors_2nd, [1, 0, 2])
+    final_c_vectors_2nd = tf.transpose(final_c_vectors_2nd, [1, 0, 2])
 
     final_outputs = tf.nest.map_structure(
         lambda ta: ta.stack(), final_outputs_ta)
@@ -529,7 +547,7 @@ def dynamic_decode(decoder,
       final_outputs = tf.nest.map_structure(
           _transpose_batch_time, final_outputs)
 
-  return final_outputs, final_state, final_sequence_lengths, final_h_vectors
+  return final_outputs, final_state, final_sequence_lengths, final_h_vectors_1st, final_h_vectors_2nd, final_c_vectors_2nd
 
 
 # The following sample functions (_call_sampler, bernoulli_sample,

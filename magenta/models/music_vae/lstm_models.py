@@ -288,7 +288,7 @@ class BaseLstmDecoder(base_model.BaseDecoder):
         initial_state=initial_state,
         input_shape=input_shape,
         output_layer=self._output_layer)
-    final_output, final_state, final_lengths, h_vectors = contrib_seq2seq.dynamic_decode(
+    final_output, final_state, final_lengths, h_vectors_1st, h_vectors_2nd, c_vectors_2nd = contrib_seq2seq.dynamic_decode(
         decoder,
         maximum_iterations=max_length,
         swap_memory=True,
@@ -299,7 +299,9 @@ class BaseLstmDecoder(base_model.BaseDecoder):
         samples=final_output.sample_id,
         final_state=final_state,
         final_sequence_lengths=final_lengths,
-        h_vectors=h_vectors)
+        h_vectors_1st=h_vectors_1st,
+        h_vectors_2nd=h_vectors_2nd,
+        c_vectors_2nd=c_vectors_2nd)
 
     return results
 

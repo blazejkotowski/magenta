@@ -38,6 +38,14 @@ def rnn_cell(rnn_cell_size, dropout_keep_prob, residual, is_training=True):
     cells.append(cell)
   return rnn.MultiRNNCell(cells)
 
+def single_rnn_cell(rnn_cell_size, drouput_keep_prob, residual, is_training=True):
+  dropout_keep_prob = dropout_keep_prob if is_training else 1.0
+  cell = contrib_rnn.LSTMBlockCell(rnn_cell_size)
+  if residual:
+    cell = rnn.ResidualWrapper(cell)
+    cell = contrib_rnn.InputProjectionWrapper(cell, rnn_cell_size[i])
+  cell = rnn.DropoutWrapper(cell, input_keep_prob=dropout_keep_prob)
+  return cell
 
 def build_bidirectional_lstm(
     layer_sizes, dropout_keep_prob, residual, is_training):
@@ -172,7 +180,7 @@ def get_sampling_probability(hparams, is_training):
 class LstmDecodeResults(
     collections.namedtuple('LstmDecodeResults',
                            ('rnn_input', 'rnn_output', 'samples', 'final_state',
-                            'final_sequence_lengths', 'h_vectors'))):
+                            'final_sequence_lengths', 'h_vectors_1st', 'h_vectors_2nd', 'c_vectors_2nd'))):
   pass
 
 

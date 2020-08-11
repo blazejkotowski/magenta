@@ -312,11 +312,17 @@ class TrainedModel(object):
   def decode_with_h_vectors(self, z, length=None, temperature=1.0, c_input=None):
     full_results = self.decode_to_tensors(z, length, temperature, c_input, return_full_results=True)
     tensors = []
-    h_vectors = []
+    h_vectors_1st = []
+    h_vectors_2nd = []
+    c_vectors_2nd = []
     for res in full_results:
       tensors.extend(res.samples)
-      h_vectors.extend(res.h_vectors)
-    h_vectors = h_vectors[:len(z)]
+      h_vectors_1st.extend(res.h_vectors_1st)
+      h_vectors_2nd.extend(res.h_vectors_2nd)
+      c_vectors_2nd.extend(res.c_vectors_2nd)
+    h_vectors_1st = h_vectors_1st[:len(z)]
+    h_vectors_2nd = h_vectors_2nd[:len(z)]
+    c_vectors_2nd = c_vectors_2nd[:len(z)]
 
     if self._c_input is not None:
       sequences = self._config.data_converter.from_tensors(
@@ -327,8 +333,8 @@ class TrainedModel(object):
     else:
       sequences = self._config.data_converter.from_tensors(tensors)
 
-    DecodeResults = collections.namedtuple('DecodeResults', ['sequence', 'h_vectors'])
-    return list(map(lambda x: DecodeResults(x[0], x[1]), zip(sequences, h_vectors)))
+    DecodeResults = collections.namedtuple('DecodeResults', ['sequence', 'h_vectors_1st', 'h_vectors_2nd', 'c_vectors_2nd'])
+    return list(map(lambda x: DecodeResults(x[0], x[1], x[2], x[3]), zip(sequences, h_vectors_1st, h_vectors_2nd, c_vectors_2nd)))
 
 
   def decode_to_tensors(self, z, length=None, temperature=1.0, c_input=None,
